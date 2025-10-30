@@ -5,7 +5,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { getSupabase } from '../lib/supabase'
 
 const schema = z.object({
-  client_id: z.string().min(1, 'Obrigatório'),
   greeting_message: z.string().optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
   working_hours: z.string().optional().or(z.literal('')),
@@ -16,10 +15,9 @@ type FormValues = z.infer<typeof schema>
 
 export default function Settings() {
   const [loading, setLoading] = useState(false)
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, setValue } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      client_id: '',
       greeting_message: '',
       address: '',
       working_hours: '',
@@ -27,18 +25,17 @@ export default function Settings() {
     }
   })
 
-  const clientId = watch('client_id')
+  const GLOBAL_ID = 'global'
 
   useEffect(() => {
     async function load() {
       const supabase = getSupabase()
       if (!supabase) return
-      if (!clientId) return
       setLoading(true)
       const { data, error } = await supabase
         .from('assistant_settings')
         .select('*')
-        .eq('client_id', clientId)
+        .eq('client_id', GLOBAL_ID)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -51,7 +48,7 @@ export default function Settings() {
       setLoading(false)
     }
     load()
-  }, [clientId, setValue])
+  }, [setValue])
 
   const onSubmit = async (values: FormValues) => {
     const supabase = getSupabase()
@@ -61,7 +58,7 @@ export default function Settings() {
     }
     setLoading(true)
     const payload = {
-      client_id: values.client_id,
+      client_id: GLOBAL_ID,
       greeting_message: values.greeting_message ?? null,
       address: values.address ?? null,
       working_hours: values.working_hours ?? null,
@@ -72,7 +69,7 @@ export default function Settings() {
     const { data: existing, error: findErr } = await supabase
       .from('assistant_settings')
       .select('id')
-      .eq('client_id', values.client_id)
+      .eq('client_id', GLOBAL_ID)
       .limit(1)
       .maybeSingle()
 
@@ -81,7 +78,7 @@ export default function Settings() {
       const resp = await supabase
         .from('assistant_settings')
         .update(payload)
-        .eq('client_id', values.client_id)
+        .eq('client_id', GLOBAL_ID)
       error = resp.error
     } else {
       const resp = await supabase
@@ -111,11 +108,6 @@ export default function Settings() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="card p-6 space-y-4 max-w-2xl">
         <div>
-          <label className="block text-sm font-medium text-gray-300">Client ID</label>
-          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="ex: cliente-123" {...register('client_id')} />
-          {errors.client_id && <p className="text-sm text-red-600 mt-1">{errors.client_id.message}</p>}
-        </div>
-        <div>
           <label className="block text-sm font-medium text-gray-300">Mensagem de Saudação</label>
           <textarea className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" rows={3} placeholder="Olá! Como posso ajudar?" {...register('greeting_message')} />
         </div>
@@ -133,7 +125,7 @@ export default function Settings() {
         </div>
         <div className="flex items-center gap-3">
           <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Salvando...' : 'Salvar'}</button>
-          <button type="button" className="px-4 py-2 rounded-md border border-gray-700 text-gray-300 bg-neutral-800 hover:bg-neutral-700 hover:shadow-lg hover:shadow-brand-500/20 transition" onClick={() => clientId && window.location.reload()}>Recarregar</button>
+          <button type="button" className="px-4 py-2 rounded-md border border-gray-700 text-gray-300 bg-neutral-800 hover:bg-neutral-700 hover:shadow-lg hover:shadow-brand-500/20 transition" onClick={() => window.location.reload()}>Recarregar</button>
         </div>
       </form>
     </div>
