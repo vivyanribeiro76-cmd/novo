@@ -105,35 +105,35 @@ export default function Settings() {
         </div>
       )}
       <div>
-        <h1 className="text-2xl font-semibold">Configurações do Assistente</h1>
-        <p className="text-sm text-neutral-600">Personalize as mensagens e informações exibidas pelo seu assistente.</p>
+        <h1 className="text-2xl font-semibold text-white">Configurações do Assistente</h1>
+        <p className="text-sm text-brand-400/80">Personalize as mensagens e informações exibidas pelo seu assistente.</p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="card p-6 space-y-4 max-w-2xl">
         <div>
-          <label className="block text-sm font-medium">Client ID</label>
-          <input className="mt-1 w-full rounded-md border px-3 py-2" placeholder="ex: cliente-123" {...register('client_id')} />
+          <label className="block text-sm font-medium text-gray-300">Client ID</label>
+          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="ex: cliente-123" {...register('client_id')} />
           {errors.client_id && <p className="text-sm text-red-600 mt-1">{errors.client_id.message}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium">Mensagem de Saudação</label>
-          <textarea className="mt-1 w-full rounded-md border px-3 py-2" rows={3} placeholder="Olá! Como posso ajudar?" {...register('greeting_message')} />
+          <label className="block text-sm font-medium text-gray-300">Mensagem de Saudação</label>
+          <textarea className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" rows={3} placeholder="Olá! Como posso ajudar?" {...register('greeting_message')} />
         </div>
         <div>
-          <label className="block text-sm font-medium">Endereço</label>
-          <input className="mt-1 w-full rounded-md border px-3 py-2" placeholder="Rua Exemplo, 123" {...register('address')} />
+          <label className="block text-sm font-medium text-gray-300">Endereço</label>
+          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="Rua Exemplo, 123" {...register('address')} />
         </div>
         <div>
-          <label className="block text-sm font-medium">Horário de Funcionamento</label>
-          <input className="mt-1 w-full rounded-md border px-3 py-2" placeholder="Seg-Sex 09:00-18:00" {...register('working_hours')} />
+          <label className="block text-sm font-medium text-gray-300">Horário de Funcionamento</label>
+          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="Seg-Sex 09:00-18:00" {...register('working_hours')} />
         </div>
         <div className="flex items-center gap-2">
-          <input type="checkbox" className="h-4 w-4" {...register('open_today')} />
-          <span className="text-sm">Vai funcionar hoje?</span>
+          <input type="checkbox" className="h-4 w-4 accent-brand-400" {...register('open_today')} />
+          <span className="text-sm text-gray-300">Vai funcionar hoje?</span>
         </div>
         <div className="flex items-center gap-3">
           <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Salvando...' : 'Salvar'}</button>
-          <button type="button" className="px-4 py-2 rounded-md border" onClick={() => clientId && window.location.reload()}>Recarregar</button>
+          <button type="button" className="px-4 py-2 rounded-md border border-gray-700 text-gray-300 bg-neutral-800 hover:bg-neutral-700 hover:shadow-lg hover:shadow-brand-500/20 transition" onClick={() => clientId && window.location.reload()}>Recarregar</button>
         </div>
       </form>
     </div>
