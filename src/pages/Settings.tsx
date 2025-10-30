@@ -5,23 +5,60 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { getSupabase } from '../lib/supabase'
 
 const schema = z.object({
+  // Básico existente
   greeting_message: z.string().optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
   working_hours: z.string().optional().or(z.literal('')),
-  open_today: z.boolean(),
+
+  // Identidade
+  nome_assistente: z.string().optional().or(z.literal('')),
+  tom: z.enum(['profissional', 'amigavel', 'objetivo']).optional(),
+  idioma: z.enum(['pt-BR', 'en-US', 'es-ES']).optional(),
+
+  // Encaminhamento (assuntos livres)
+  assuntos_encaminhar: z.string().optional().or(z.literal('')),
+
+  // Contatos
+  telefone: z.string().optional().or(z.literal('')),
+  whatsapp: z.string().optional().or(z.literal('')),
+  email: z.string().email().optional().or(z.literal('')),
+  site: z.string().url().optional().or(z.literal('')),
+
+  // Horários (MVP simplificado)
+  horario_padrao_inicio: z.string().optional().or(z.literal('')),
+  horario_padrao_fim: z.string().optional().or(z.literal('')),
+  dias_fechado: z.array(z.enum(['sabado', 'domingo', 'feriado'])).optional(),
+  excecoes: z.string().optional().or(z.literal('')), // multiline: YYYY-MM-DD: fechado|HH:MM-HH:MM
+
+  // Respostas rápidas (CSV)
+  respostas_rapidas: z.string().optional().or(z.literal('')),
 })
 
 type FormValues = z.infer<typeof schema>
 
 export default function Settings() {
   const [loading, setLoading] = useState(false)
-  const { register, handleSubmit, setValue } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  const { register, handleSubmit, setValue } = useForm<any>({
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       greeting_message: '',
       address: '',
       working_hours: '',
-      open_today: false,
+      // open_today removido da UI
+
+      nome_assistente: '',
+      tom: 'profissional',
+      idioma: 'pt-BR',
+      assuntos_encaminhar: '',
+      telefone: '',
+      whatsapp: '',
+      email: '',
+      site: '',
+      horario_padrao_inicio: '',
+      horario_padrao_fim: '',
+      dias_fechado: [],
+      excecoes: '',
+      respostas_rapidas: '',
     }
   })
 
@@ -43,7 +80,22 @@ export default function Settings() {
         setValue('greeting_message', data.greeting_message ?? '')
         setValue('address', data.address ?? '')
         setValue('working_hours', data.working_hours ?? '')
-        setValue('open_today', !!data.open_today)
+        // open_today removido da UI
+
+        const ex = (data.extras ?? {}) as any
+        setValue('nome_assistente', ex.nome_assistente ?? '')
+        setValue('tom', ex.tom ?? 'profissional')
+        setValue('idioma', ex.idioma ?? 'pt-BR')
+        setValue('assuntos_encaminhar', Array.isArray(ex.assuntos_encaminhar) ? ex.assuntos_encaminhar.join('\n') : (ex.assuntos_encaminhar ?? ''))
+        setValue('telefone', ex.telefone ?? data.telefone ?? '')
+        setValue('whatsapp', ex.whatsapp ?? data.whatsapp ?? '')
+        setValue('email', ex.email ?? data.email ?? '')
+        setValue('site', ex.site ?? data.site ?? '')
+        setValue('horario_padrao_inicio', ex.horario_padrao_inicio ?? data.horario_padrao_inicio ?? '')
+        setValue('horario_padrao_fim', ex.horario_padrao_fim ?? data.horario_padrao_fim ?? '')
+        setValue('dias_fechado', ex.dias_fechado ?? data.dias_fechado ?? [])
+        setValue('excecoes', Array.isArray(ex.excecoes) ? ex.excecoes.join('\n') : (Array.isArray(data.excecoes) ? data.excecoes.join('\n') : (ex.excecoes ?? '')))
+        setValue('respostas_rapidas', Array.isArray(ex.respostas_rapidas) ? ex.respostas_rapidas.join(', ') : (Array.isArray(data.respostas_rapidas) ? data.respostas_rapidas.join(', ') : (ex.respostas_rapidas ?? '')))
       }
       setLoading(false)
     }
@@ -57,12 +109,46 @@ export default function Settings() {
       return
     }
     setLoading(true)
+    const extras = {
+      nome_assistente: values.nome_assistente || null,
+      tom: values.tom || null,
+      idioma: values.idioma || null,
+      assuntos_encaminhar: (values.assuntos_encaminhar || '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean),
+      telefone: values.telefone || null,
+      whatsapp: values.whatsapp || null,
+      email: values.email || null,
+      site: values.site || null,
+      horario_padrao_inicio: values.horario_padrao_inicio || null,
+      horario_padrao_fim: values.horario_padrao_fim || null,
+      dias_fechado: values.dias_fechado || [],
+      excecoes: (values.excecoes || '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean),
+      respostas_rapidas: (values.respostas_rapidas || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean),
+    }
     const payload = {
       client_id: GLOBAL_ID,
       greeting_message: values.greeting_message ?? null,
       address: values.address ?? null,
       working_hours: values.working_hours ?? null,
-      open_today: values.open_today,
+      open_today: null,
+      // Also persist new fields in dedicated columns for easier queries
+      telefone: extras.telefone,
+      email: extras.email,
+      site: extras.site,
+      horario_padrao_inicio: extras.horario_padrao_inicio,
+      horario_padrao_fim: extras.horario_padrao_fim,
+      dias_fechado: extras.dias_fechado,
+      excecoes: extras.excecoes,
+      respostas_rapidas: extras.respostas_rapidas,
+      extras,
       updated_at: new Date().toISOString(),
     }
     // Update-if-exists else insert (avoid requiring unique constraint on client_id)
@@ -75,16 +161,34 @@ export default function Settings() {
 
     let error = null as any
     if (!findErr && existing) {
-      const resp = await supabase
+      // Try update with extras
+      let resp = await supabase
         .from('assistant_settings')
-        .update(payload)
+        .update(payload as any)
         .eq('client_id', GLOBAL_ID)
       error = resp.error
+      // Fallback: retry without extras if schema cache doesn't have the column yet
+      if (error && typeof error.message === 'string' && error.message.includes('extras')) {
+        const { extras: _omit, ...payloadNoExtras } = payload as any
+        resp = await supabase
+          .from('assistant_settings')
+          .update(payloadNoExtras)
+          .eq('client_id', GLOBAL_ID)
+        error = resp.error
+      }
     } else {
-      const resp = await supabase
+      // Try insert with extras
+      let resp = await supabase
         .from('assistant_settings')
-        .insert(payload)
+        .insert(payload as any)
       error = resp.error
+      if (error && typeof error.message === 'string' && error.message.includes('extras')) {
+        const { extras: _omit, ...payloadNoExtras } = payload as any
+        resp = await supabase
+          .from('assistant_settings')
+          .insert(payloadNoExtras)
+        error = resp.error
+      }
     }
     if (error) {
       alert('Erro ao salvar: ' + error.message)
@@ -106,22 +210,100 @@ export default function Settings() {
         <p className="text-sm text-brand-400/80">Personalize as mensagens e informações exibidas pelo seu assistente.</p>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="card p-6 space-y-4 max-w-2xl">
+      <form onSubmit={handleSubmit(onSubmit)} className="card p-6 space-y-6 max-w-3xl">
+        {/* Identidade do Assistente */}
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div className="sm:col-span-1">
+            <label className="block text-sm font-medium text-gray-300">Nome do Assistente</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="ex: MetricAI" {...register('nome_assistente')} />
+          </div>
+          <div className="sm:col-span-1">
+            <label className="block text-sm font-medium text-gray-300">Tom</label>
+            <select className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white px-3 py-2" {...register('tom')}>
+              <option value="profissional">Profissional</option>
+              <option value="amigavel">Amigável</option>
+              <option value="objetivo">Objetivo</option>
+            </select>
+          </div>
+          <div className="sm:col-span-1">
+            <label className="block text-sm font-medium text-gray-300">Idioma</label>
+            <select className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white px-3 py-2" {...register('idioma')}>
+              <option value="pt-BR">Português (Brasil)</option>
+              <option value="en-US">Inglês (EUA)</option>
+              <option value="es-ES">Espanhol (ES)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Mensagens / Encaminhamento */}
         <div>
           <label className="block text-sm font-medium text-gray-300">Mensagem de Saudação</label>
           <textarea className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" rows={3} placeholder="Olá! Como posso ajudar?" {...register('greeting_message')} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300">Endereço</label>
-          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="Rua Exemplo, 123" {...register('address')} />
+          <label className="block text-sm font-medium text-gray-300">Assuntos para encaminhar ao humano (um por linha)</label>
+          <textarea className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" rows={3} placeholder="Cancelamentos\nReclamações\nFinanceiro" {...register('assuntos_encaminhar')} />
         </div>
+
+        {/* Contatos */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300">Telefone</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="(11) 9999-9999" {...register('telefone')} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300">WhatsApp</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="(11) 9999-9999" {...register('whatsapp')} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300">E-mail</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="contato@empresa.com" {...register('email')} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300">Site</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="https://empresa.com" {...register('site')} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-300">Endereço</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="Rua Exemplo, 123" {...register('address')} />
+          </div>
+        </div>
+
+        {/* Horários */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300">Horário padrão - início</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="09:00" {...register('horario_padrao_inicio')} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300">Horário padrão - fim</label>
+            <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="18:00" {...register('horario_padrao_fim')} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-300">Dias fechados</label>
+            <div className="mt-2 flex gap-6 flex-wrap text-gray-300">
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" value="sabado" {...register('dias_fechado')} className="h-4 w-4 accent-brand-400" /> Sábado
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" value="domingo" {...register('dias_fechado')} className="h-4 w-4 accent-brand-400" /> Domingo
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" value="feriado" {...register('dias_fechado')} className="h-4 w-4 accent-brand-400" /> Feriado
+              </label>
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-300">Exceções (um por linha)</label>
+            <textarea className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" rows={3} placeholder="2025-12-25: fechado\n2025-12-31: 09:00-12:00" {...register('excecoes')} />
+          </div>
+        </div>
+
+
+        {/* Respostas rápidas */}
         <div>
-          <label className="block text-sm font-medium text-gray-300">Horário de Funcionamento</label>
-          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="Seg-Sex 09:00-18:00" {...register('working_hours')} />
-        </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" className="h-4 w-4 accent-brand-400" {...register('open_today')} />
-          <span className="text-sm text-gray-300">Vai funcionar hoje?</span>
+          <label className="block text-sm font-medium text-gray-300">Respostas rápidas (separadas por vírgula)</label>
+          <input className="mt-1 w-full rounded-md border border-gray-700 bg-neutral-800 text-white placeholder-gray-500 px-3 py-2" placeholder="Endereço, Horários, Falar com humano" {...register('respostas_rapidas')} />
         </div>
         <div className="flex items-center gap-3">
           <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Salvando...' : 'Salvar'}</button>

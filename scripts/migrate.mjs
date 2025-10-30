@@ -37,6 +37,7 @@ async function main() {
         address text,
         working_hours text,
         open_today boolean default false,
+        extras jsonb default '{}'::jsonb,
         updated_at timestamptz default now()
       );
       create index if not exists idx_assistant_settings_client on public.assistant_settings(client_id);
@@ -78,6 +79,38 @@ async function main() {
     await client.query(`
       alter table public.assistant_settings enable row level security;
       alter table public.conversations enable row level security;
+    `)
+
+    // 3.1) Add new columns to assistant_settings if they don't exist yet
+    await client.query(`
+      do $$
+      begin
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='telefone') then
+          alter table public.assistant_settings add column telefone text;
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='email') then
+          alter table public.assistant_settings add column email text;
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='site') then
+          alter table public.assistant_settings add column site text;
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='horario_padrao_inicio') then
+          alter table public.assistant_settings add column horario_padrao_inicio text;
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='horario_padrao_fim') then
+          alter table public.assistant_settings add column horario_padrao_fim text;
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='dias_fechado') then
+          alter table public.assistant_settings add column dias_fechado text[] default '{}'::text[];
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='excecoes') then
+          alter table public.assistant_settings add column excecoes text[] default '{}'::text[];
+        end if;
+        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='respostas_rapidas') then
+          alter table public.assistant_settings add column respostas_rapidas text[] default '{}'::text[];
+        end if;
+      end
+      $$;
     `)
 
     // 4) Create policies only if missing
@@ -123,6 +156,10 @@ async function main() {
     `)
 
     await client.query('commit')
+    // Ask PostgREST to reload schema cache
+    try {
+      await client.query("select pg_notify('pgrst', 'reload schema')")
+    } catch {}
     console.log('Migration completed successfully.')
   } catch (e) {
     await client.query('rollback')
