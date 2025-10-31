@@ -56,6 +56,16 @@ async function main() {
       );
       create index if not exists idx_contabilizacao_remotejid on public.contabilizacao(remotejid);
       create index if not exists idx_contabilizacao_timestamp on public.contabilizacao(timestamp);
+
+      create table if not exists public.users (
+        id uuid primary key default gen_random_uuid(),
+        email text unique not null,
+        password_hash text not null,
+        name text,
+        created_at timestamptz default now(),
+        updated_at timestamptz default now()
+      );
+      create index if not exists idx_users_email on public.users(email);
     `)
 
     // 2) Function to read x-client-id header in public schema
@@ -106,6 +116,7 @@ async function main() {
       alter table public.assistant_settings enable row level security;
       alter table public.conversations enable row level security;
       alter table public.contabilizacao enable row level security;
+      alter table public.users enable row level security;
     `)
 
     // 4) Create policies only if missing
@@ -166,6 +177,13 @@ async function main() {
         ) then
           create policy "public update contabilizacao" on public.contabilizacao
             for update using (true);
+        end if;
+
+        if not exists (
+          select 1 from pg_policies where schemaname='public' and tablename='users' and policyname='public read users'
+        ) then
+          create policy "public read users" on public.users
+            for select using (true);
         end if;
       end
       $$;

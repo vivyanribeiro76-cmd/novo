@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getSupabase } from '../lib/supabase'
+import bcrypt from 'bcryptjs'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -8,25 +10,63 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
 
-    // Credenciais padrão (você pode trocar depois)
-    const validUsername = 'admin'
-    const validPassword = 'admin'
-
-    setTimeout(() => {
-      if (username === validUsername && password === validPassword) {
-        sessionStorage.setItem('authenticated', 'true')
-        sessionStorage.setItem('user', username)
-        navigate('/settings')
-      } else {
-        setError('Usuário ou senha inválidos')
-      }
+    const supabase = getSupabase()
+    if (!supabase) {
+      setError('Supabase não configurado. Configure as variáveis de ambiente.')
       setLoading(false)
-    }, 500)
+      return
+    }
+
+    try {
+      // Buscar usuário por email
+      const { data: user, error: fetchError } = await supabase
+        .from('users')
+        .select('id, email, password_hash, name')
+        .eq('email', username)
+        .maybeSingle()
+
+      if (fetchError || !user) {
+        setError('Usuário ou senha inválidos')
+        setLoading(false)
+        return
+      }
+
+      // Verificar senha (comparação simples - em produção use bcrypt)
+      // Para criar hash: await bcrypt.hash(password, 10)
+      const isValidPassword = await verifyPassword(password, user.password_hash)
+      
+      if (!isValidPassword) {
+        setError('Usuário ou senha inválidos')
+        setLoading(false)
+        return
+      }
+
+      // Autenticação bem-sucedida
+      sessionStorage.setItem('authenticated', 'true')
+      sessionStorage.setItem('user', user.email)
+      sessionStorage.setItem('userId', user.id)
+      navigate('/settings')
+    } catch (err) {
+      console.error('Erro no login:', err)
+      setError('Erro ao fazer login. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Verificação de senha com bcrypt
+  const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+    try {
+      return await bcrypt.compare(password, hash)
+    } catch (err) {
+      console.error('Erro ao verificar senha:', err)
+      return false
+    }
   }
 
   return (
@@ -42,7 +82,7 @@ export default function Login() {
               e.currentTarget.style.display = 'none'
             }}
           />
-          <h1 className="text-3xl font-bold text-white">MetricAI</h1>
+          <h1 className="text-3xl font-bold text-white">FZIA</h1>
           <p className="text-gray-400 mt-2">Faça login para continuar</p>
         </div>
 
@@ -93,7 +133,7 @@ export default function Login() {
           </form>
 
           <div className="mt-6 text-center text-sm text-gray-500">
-            <p>Credenciais padrão: admin / admin</p>
+            <p>Entre com suas credenciais cadastradas</p>
           </div>
         </div>
       </div>
