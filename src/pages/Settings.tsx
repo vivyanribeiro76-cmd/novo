@@ -77,25 +77,23 @@ export default function Settings() {
         .limit(1)
         .maybeSingle()
       if (!error && data) {
-        setValue('greeting_message', data.greeting_message ?? '')
-        setValue('address', data.address ?? '')
-        setValue('working_hours', data.working_hours ?? '')
-        // open_today removido da UI
-
-        const ex = (data.extras ?? {}) as any
-        setValue('nome_assistente', ex.nome_assistente ?? '')
-        setValue('tom', ex.tom ?? 'profissional')
-        setValue('idioma', ex.idioma ?? 'pt-BR')
-        setValue('assuntos_encaminhar', Array.isArray(ex.assuntos_encaminhar) ? ex.assuntos_encaminhar.join('\n') : (ex.assuntos_encaminhar ?? ''))
-        setValue('telefone', ex.telefone ?? data.telefone ?? '')
-        setValue('whatsapp', ex.whatsapp ?? data.whatsapp ?? '')
-        setValue('email', ex.email ?? data.email ?? '')
-        setValue('site', ex.site ?? data.site ?? '')
-        setValue('horario_padrao_inicio', ex.horario_padrao_inicio ?? data.horario_padrao_inicio ?? '')
-        setValue('horario_padrao_fim', ex.horario_padrao_fim ?? data.horario_padrao_fim ?? '')
-        setValue('dias_fechado', ex.dias_fechado ?? data.dias_fechado ?? [])
-        setValue('excecoes', Array.isArray(ex.excecoes) ? ex.excecoes.join('\n') : (Array.isArray(data.excecoes) ? data.excecoes.join('\n') : (ex.excecoes ?? '')))
-        setValue('respostas_rapidas', Array.isArray(ex.respostas_rapidas) ? ex.respostas_rapidas.join(', ') : (Array.isArray(data.respostas_rapidas) ? data.respostas_rapidas.join(', ') : (ex.respostas_rapidas ?? '')))
+        const obs = (data.observacoes ?? {}) as any
+        setValue('greeting_message', obs.greeting_message ?? '')
+        setValue('address', obs.address ?? '')
+        setValue('working_hours', obs.working_hours ?? '')
+        setValue('nome_assistente', obs.nome_assistente ?? '')
+        setValue('tom', obs.tom ?? 'profissional')
+        setValue('idioma', obs.idioma ?? 'pt-BR')
+        setValue('assuntos_encaminhar', Array.isArray(obs.assuntos_encaminhar) ? obs.assuntos_encaminhar.join('\n') : (obs.assuntos_encaminhar ?? ''))
+        setValue('telefone', obs.telefone ?? '')
+        setValue('whatsapp', obs.whatsapp ?? '')
+        setValue('email', obs.email ?? '')
+        setValue('site', obs.site ?? '')
+        setValue('horario_padrao_inicio', obs.horario_padrao_inicio ?? '')
+        setValue('horario_padrao_fim', obs.horario_padrao_fim ?? '')
+        setValue('dias_fechado', obs.dias_fechado ?? [])
+        setValue('excecoes', Array.isArray(obs.excecoes) ? obs.excecoes.join('\n') : (obs.excecoes ?? ''))
+        setValue('respostas_rapidas', Array.isArray(obs.respostas_rapidas) ? obs.respostas_rapidas.join(', ') : (obs.respostas_rapidas ?? ''))
       }
       setLoading(false)
     }
@@ -109,7 +107,10 @@ export default function Settings() {
       return
     }
     setLoading(true)
-    const extras = {
+    const observacoes = {
+      greeting_message: values.greeting_message || null,
+      address: values.address || null,
+      working_hours: values.working_hours || null,
       nome_assistente: values.nome_assistente || null,
       tom: values.tom || null,
       idioma: values.idioma || null,
@@ -135,20 +136,7 @@ export default function Settings() {
     }
     const payload = {
       client_id: GLOBAL_ID,
-      greeting_message: values.greeting_message ?? null,
-      address: values.address ?? null,
-      working_hours: values.working_hours ?? null,
-      open_today: null,
-      // Also persist new fields in dedicated columns for easier queries
-      telefone: extras.telefone,
-      email: extras.email,
-      site: extras.site,
-      horario_padrao_inicio: extras.horario_padrao_inicio,
-      horario_padrao_fim: extras.horario_padrao_fim,
-      dias_fechado: extras.dias_fechado,
-      excecoes: extras.excecoes,
-      respostas_rapidas: extras.respostas_rapidas,
-      extras,
+      observacoes,
       updated_at: new Date().toISOString(),
     }
     // Update-if-exists else insert (avoid requiring unique constraint on client_id)
@@ -161,34 +149,16 @@ export default function Settings() {
 
     let error = null as any
     if (!findErr && existing) {
-      // Try update with extras
-      let resp = await supabase
+      const resp = await supabase
         .from('assistant_settings')
         .update(payload as any)
         .eq('client_id', GLOBAL_ID)
       error = resp.error
-      // Fallback: retry without extras if schema cache doesn't have the column yet
-      if (error && typeof error.message === 'string' && error.message.includes('extras')) {
-        const { extras: _omit, ...payloadNoExtras } = payload as any
-        resp = await supabase
-          .from('assistant_settings')
-          .update(payloadNoExtras)
-          .eq('client_id', GLOBAL_ID)
-        error = resp.error
-      }
     } else {
-      // Try insert with extras
-      let resp = await supabase
+      const resp = await supabase
         .from('assistant_settings')
         .insert(payload as any)
       error = resp.error
-      if (error && typeof error.message === 'string' && error.message.includes('extras')) {
-        const { extras: _omit, ...payloadNoExtras } = payload as any
-        resp = await supabase
-          .from('assistant_settings')
-          .insert(payloadNoExtras)
-        error = resp.error
-      }
     }
     if (error) {
       alert('Erro ao salvar: ' + error.message)

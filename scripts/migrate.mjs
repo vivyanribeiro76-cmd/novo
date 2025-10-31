@@ -33,11 +33,7 @@ async function main() {
       create table if not exists public.assistant_settings (
         id uuid primary key default gen_random_uuid(),
         client_id text not null,
-        greeting_message text,
-        address text,
-        working_hours text,
-        open_today boolean default false,
-        extras jsonb default '{}'::jsonb,
+        observacoes jsonb default '{}'::jsonb,
         updated_at timestamptz default now()
       );
       create index if not exists idx_assistant_settings_client on public.assistant_settings(client_id);
@@ -50,6 +46,16 @@ async function main() {
       );
       create index if not exists idx_conversations_client on public.conversations(client_id);
       create index if not exists idx_conversations_started_at on public.conversations(started_at);
+
+      create table if not exists public.contabilizacao (
+        id serial primary key,
+        remotejid text not null,
+        mensagens text,
+        agendamento boolean default false,
+        timestamp timestamptz not null default now()
+      );
+      create index if not exists idx_contabilizacao_remotejid on public.contabilizacao(remotejid);
+      create index if not exists idx_contabilizacao_timestamp on public.contabilizacao(timestamp);
     `)
 
     // 2) Function to read x-client-id header in public schema
@@ -75,42 +81,31 @@ async function main() {
       $func$;
     `)
 
+    // 2.1) Ensure observacoes column exists (for existing tables)
+    await client.query(`
+      do $$
+      begin
+        if not exists (
+          select 1 from information_schema.columns 
+          where table_schema='public' and table_name='assistant_settings' and column_name='observacoes'
+        ) then
+          alter table public.assistant_settings add column observacoes jsonb default '{}'::jsonb;
+        end if;
+        if not exists (
+          select 1 from information_schema.columns 
+          where table_schema='public' and table_name='contabilizacao' and column_name='agendamento'
+        ) then
+          alter table public.contabilizacao add column agendamento boolean default false;
+        end if;
+      end
+      $$;
+    `)
+
     // 3) Enable RLS (idempotent)
     await client.query(`
       alter table public.assistant_settings enable row level security;
       alter table public.conversations enable row level security;
-    `)
-
-    // 3.1) Add new columns to assistant_settings if they don't exist yet
-    await client.query(`
-      do $$
-      begin
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='telefone') then
-          alter table public.assistant_settings add column telefone text;
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='email') then
-          alter table public.assistant_settings add column email text;
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='site') then
-          alter table public.assistant_settings add column site text;
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='horario_padrao_inicio') then
-          alter table public.assistant_settings add column horario_padrao_inicio text;
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='horario_padrao_fim') then
-          alter table public.assistant_settings add column horario_padrao_fim text;
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='dias_fechado') then
-          alter table public.assistant_settings add column dias_fechado text[] default '{}'::text[];
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='excecoes') then
-          alter table public.assistant_settings add column excecoes text[] default '{}'::text[];
-        end if;
-        if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='assistant_settings' and column_name='respostas_rapidas') then
-          alter table public.assistant_settings add column respostas_rapidas text[] default '{}'::text[];
-        end if;
-      end
-      $$;
+      alter table public.contabilizacao enable row level security;
     `)
 
     // 4) Create policies only if missing
@@ -150,6 +145,27 @@ async function main() {
         ) then
           create policy "insert conv by client_id" on public.conversations
             for insert with check (client_id = coalesce(public.request_client_id(), client_id));
+        end if;
+
+        if not exists (
+          select 1 from pg_policies where schemaname='public' and tablename='contabilizacao' and policyname='public read contabilizacao'
+        ) then
+          create policy "public read contabilizacao" on public.contabilizacao
+            for select using (true);
+        end if;
+
+        if not exists (
+          select 1 from pg_policies where schemaname='public' and tablename='contabilizacao' and policyname='public insert contabilizacao'
+        ) then
+          create policy "public insert contabilizacao" on public.contabilizacao
+            for insert with check (true);
+        end if;
+
+        if not exists (
+          select 1 from pg_policies where schemaname='public' and tablename='contabilizacao' and policyname='public update contabilizacao'
+        ) then
+          create policy "public update contabilizacao" on public.contabilizacao
+            for update using (true);
         end if;
       end
       $$;
