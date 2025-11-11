@@ -50,6 +50,18 @@ export default function AppLayout() {
               >
                 Dashboard
               </NavLink>
+              <NavLink
+                to="/change-password"
+                className={({ isActive }) =>
+                  `px-3 py-2 rounded-md transition shadow-sm ${
+                    isActive
+                      ? 'bg-brand-500/20 text-brand-400 border border-brand-500/30'
+                      : 'text-gray-400 hover:bg-dark-secondary hover:text-white hover:shadow-lg hover:shadow-brand-500/20'
+                  }`
+                }
+              >
+                Alterar Senha
+              </NavLink>
             </nav>
             <button
               onClick={handleLogout}

@@ -2,6 +2,68 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabase'
 import bcrypt from 'bcryptjs'
+import { logger } from '../lib/logger'
+
+// Rate limiting: máximo 5 tentativas a cada 15 minutos
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCKOUT_TIME = 15 * 60 * 1000 // 15 minutos
+
+interface LoginAttempt {
+  count: number
+  lastAttempt: number
+}
+
+function getRateLimitKey(email: string): string {
+  return `login_attempts_${email}`
+}
+
+function checkRateLimit(email: string): { allowed: boolean; remainingTime?: number } {
+  const key = getRateLimitKey(email)
+  const stored = localStorage.getItem(key)
+  
+  if (!stored) return { allowed: true }
+  
+  const attempt: LoginAttempt = JSON.parse(stored)
+  const now = Date.now()
+  const timeSinceLastAttempt = now - attempt.lastAttempt
+  
+  // Reset após lockout time
+  if (timeSinceLastAttempt > LOCKOUT_TIME) {
+    localStorage.removeItem(key)
+    return { allowed: true }
+  }
+  
+  // Bloqueado
+  if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
+    const remainingTime = Math.ceil((LOCKOUT_TIME - timeSinceLastAttempt) / 1000 / 60)
+    return { allowed: false, remainingTime }
+  }
+  
+  return { allowed: true }
+}
+
+function recordLoginAttempt(email: string, success: boolean) {
+  const key = getRateLimitKey(email)
+  
+  if (success) {
+    localStorage.removeItem(key)
+    return
+  }
+  
+  const stored = localStorage.getItem(key)
+  const now = Date.now()
+  
+  if (!stored) {
+    const attempt: LoginAttempt = { count: 1, lastAttempt: now }
+    localStorage.setItem(key, JSON.stringify(attempt))
+    return
+  }
+  
+  const attempt: LoginAttempt = JSON.parse(stored)
+  attempt.count += 1
+  attempt.lastAttempt = now
+  localStorage.setItem(key, JSON.stringify(attempt))
+}
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -15,6 +77,33 @@ export default function Login() {
     setError('')
     setLoading(true)
 
+    // Validação de inputs
+    const emailTrimmed = username.trim()
+    const passwordTrimmed = password.trim()
+
+    if (!emailTrimmed || !passwordTrimmed) {
+      setError('Email e senha são obrigatórios')
+      setLoading(false)
+      return
+    }
+
+    // Validação básica de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(emailTrimmed)) {
+      setError('Email inválido')
+      setLoading(false)
+      return
+    }
+
+    // Verificar rate limit ANTES de qualquer operação
+    const rateLimit = checkRateLimit(emailTrimmed)
+    if (!rateLimit.allowed) {
+      setError(`Muitas tentativas de login. Tente novamente em ${rateLimit.remainingTime} minutos.`)
+      setLoading(false)
+      logger.warn('Login blocked by rate limit', { email: emailTrimmed, remainingTime: rateLimit.remainingTime })
+      return // BLOQUEIA AQUI - não continua
+    }
+
     const supabase = getSupabase()
     if (!supabase) {
       setError('Supabase não configurado. Configure as variáveis de ambiente.')
@@ -27,33 +116,50 @@ export default function Login() {
       const { data: user, error: fetchError } = await supabase
         .from('users')
         .select('id, email, password_hash, name')
-        .eq('email', username)
+        .eq('email', emailTrimmed)
         .maybeSingle()
 
       if (fetchError || !user) {
+        recordLoginAttempt(emailTrimmed, false)
+        logger.warn('Failed login attempt - user not found', { email: emailTrimmed })
         setError('Usuário ou senha inválidos')
         setLoading(false)
         return
       }
 
-      // Verificar senha (comparação simples - em produção use bcrypt)
-      // Para criar hash: await bcrypt.hash(password, 10)
-      const isValidPassword = await verifyPassword(password, user.password_hash)
+      // Verificar senha
+      const isValidPassword = await verifyPassword(passwordTrimmed, user.password_hash)
       
       if (!isValidPassword) {
+        recordLoginAttempt(emailTrimmed, false)
+        logger.warn('Failed login attempt - invalid password', { email: emailTrimmed })
         setError('Usuário ou senha inválidos')
         setLoading(false)
         return
       }
 
       // Autenticação bem-sucedida
-      sessionStorage.setItem('authenticated', 'true')
-      sessionStorage.setItem('user', user.email)
-      sessionStorage.setItem('userId', user.id)
+      recordLoginAttempt(emailTrimmed, true)
+      logger.info('Successful login', { email: emailTrimmed, userId: user.id })
+      
+      // Criar sessão com timestamp
+      const sessionData = {
+        authenticated: 'true',
+        user: user.email,
+        userId: user.id,
+        userName: user.name,
+        loginTime: new Date().toISOString()
+      }
+      
+      Object.entries(sessionData).forEach(([key, value]) => {
+        sessionStorage.setItem(key, value)
+      })
+      
       navigate('/settings')
     } catch (err) {
       console.error('Erro no login:', err)
       setError('Erro ao fazer login. Tente novamente.')
+      recordLoginAttempt(emailTrimmed, false)
     } finally {
       setLoading(false)
     }
@@ -70,19 +176,29 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-dark-primary flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-dark-primary flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Decoração lateral esquerda */}
+      <div className="absolute left-0 top-0 bottom-0 w-64 opacity-10">
+        <div className="absolute top-20 left-10 w-32 h-32 bg-brand-400 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/3 left-5 w-40 h-40 bg-brand-500 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 left-15 w-36 h-36 bg-brand-300 rounded-full blur-3xl"></div>
+      </div>
+      
+      {/* Decoração lateral direita */}
+      <div className="absolute right-0 top-0 bottom-0 w-64 opacity-10">
+        <div className="absolute top-1/4 right-10 w-36 h-36 bg-brand-400 rounded-full blur-3xl"></div>
+        <div className="absolute top-2/3 right-5 w-32 h-32 bg-brand-500 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-32 right-12 w-40 h-40 bg-brand-300 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="text-center mb-8">
           <img 
-            src="/logo.png" 
-            alt="FZ.IA" 
-            className="h-16 mx-auto mb-4"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
+            src="/logo-fzia.png" 
+            alt="FZIA - IA para Negócios" 
+            className="h-24 mx-auto mb-4"
           />
-          <h1 className="text-3xl font-bold text-white">FZIA</h1>
           <p className="text-gray-400 mt-2">Faça login para continuar</p>
         </div>
 
@@ -132,8 +248,15 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-gray-500">
-            <p>Entre com suas credenciais cadastradas</p>
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={() => navigate('/forgot-password')}
+              className="text-sm text-brand-400 hover:text-brand-300 transition"
+            >
+              Esqueci minha senha
+            </button>
+            <p className="mt-4 text-sm text-gray-500">Entre com suas credenciais cadastradas</p>
           </div>
         </div>
       </div>

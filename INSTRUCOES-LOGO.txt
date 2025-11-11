@@ -1,0 +1,10 @@
+INSTRUÇÕES PARA ADICIONAR A LOGO:
+
+1. Salve a imagem da logo que você me enviou
+2. Renomeie para: logo-fzia.png
+3. Coloque na pasta: C:\Users\adm\CascadeProjects\ai-assistant-admin\public\logo-fzia.png
+
+Caminho completo:
+C:\Users\adm\CascadeProjects\ai-assistant-admin\public\logo-fzia.png
+
+Depois de salvar, recarregue o navegador (F5) e a logo aparecerá no Login e Settings!

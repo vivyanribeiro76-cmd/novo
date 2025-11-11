@@ -1,6 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getSupabase } from '../lib/supabase'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, Pie, PieChart, Cell, Legend } from 'recharts'
+import { logger } from '../lib/logger'
+
+// Debounce helper
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
 
 function formatDate(d: Date) {
   return d.toISOString().slice(0, 10)
@@ -10,27 +28,53 @@ type Registro = { remotejid: string; mensagens: string; agendamento: boolean; ti
 
 type Filters = { start: string; end: string }
 
+const ITEMS_PER_PAGE = 1000 // Limite de registros por query
+
 export default function Dashboard() {
   const today = useMemo(() => new Date(), [])
   const firstDayMonth = useMemo(() => new Date(today.getFullYear(), today.getMonth(), 1), [today])
   const [filters, setFilters] = useState<Filters>({ start: formatDate(firstDayMonth), end: formatDate(today) })
   const [loading, setLoading] = useState(false)
   const [registros, setRegistros] = useState<Registro[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  
+  // Debounce dos filtros para evitar queries excessivas
+  const debouncedFilters = useDebounce(filters, 500)
 
   useEffect(() => {
     async function load() {
       const supabase = getSupabase()
       if (!supabase) return
       setLoading(true)
-      let query = supabase.from('contabilizacao').select('*').order('timestamp', { ascending: true })
-      if (filters.start) query = query.gte('timestamp', filters.start)
-      if (filters.end) query = query.lte('timestamp', filters.end + 'T23:59:59')
-      const { data, error } = await query
-      if (!error && data) setRegistros(data as any)
-      setLoading(false)
+      
+      try {
+        // Query com limite e contagem
+        let query = supabase
+          .from('contabilizacao')
+          .select('*', { count: 'exact' })
+          .order('timestamp', { ascending: true })
+          .limit(ITEMS_PER_PAGE)
+        
+        if (debouncedFilters.start) query = query.gte('timestamp', debouncedFilters.start)
+        if (debouncedFilters.end) query = query.lte('timestamp', debouncedFilters.end + 'T23:59:59')
+        
+        const { data, error, count } = await query
+        
+        if (!error && data) {
+          setRegistros(data as any)
+          setTotalCount(count || 0)
+          logger.info('Dashboard data loaded', { count: data.length, totalCount: count })
+        } else if (error) {
+          logger.error('Error loading dashboard data', { error: error.message })
+        }
+      } catch (err) {
+        logger.error('Unexpected error loading dashboard', { error: err instanceof Error ? err.message : 'Unknown error' })
+      } finally {
+        setLoading(false)
+      }
     }
     load()
-  }, [filters])
+  }, [debouncedFilters])
 
   // Agrupar conversas: mesmo remotejid em janela de 24h = 1 conversa
   const conversas = useMemo(() => {
@@ -114,7 +158,14 @@ export default function Dashboard() {
       )}
       <div>
         <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
-<p className="text-sm text-brand-400/80">Análise de conversas e mensagens por período.</p>
+        <p className="text-sm text-brand-400/80">
+          Análise de conversas e mensagens por período.
+          {totalCount > ITEMS_PER_PAGE && (
+            <span className="ml-2 text-yellow-400">
+              (Mostrando {ITEMS_PER_PAGE} de {totalCount} registros)
+            </span>
+          )}
+        </p>
       </div>
 
       <div className="card p-4 flex flex-wrap items-end gap-4">
